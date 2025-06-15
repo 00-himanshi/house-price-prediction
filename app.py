@@ -1,19 +1,19 @@
-import pickle 
-from flask import Flask, request, jsonify, render_template, url_for
-
+import pickle
+from flask import Flask, request, jsonify, render_template
 import numpy as np
 import pandas as pd
 
 app = Flask(__name__)
 
-# ✅ Define the actual feature columns (excluding MEDV, the target)
+# ✅ Define the feature columns used during training
 FEATURE_COLUMNS = [
     'CRIM', 'ZN', 'INDUS', 'CHAS', 'NOX',
     'RM', 'AGE', 'DIS', 'RAD', 'TAX',
-    'PTRATIO', 'B', 'LSTAT'
+    'PTRATIO',        'B', 
+    'LSTAT'
 ]
 
-# Load the model and scaler safely with error handling
+# ✅ Load model and scaler
 try:
     lgbmodel = pickle.load(open('lgb_model.pkl', 'rb'))
     print("✅ Model loaded successfully.")
@@ -38,31 +38,34 @@ def predict_api():
         return jsonify({'error': 'Model or scaler not loaded properly.'}), 500
 
     data = request.json['data']
-    print(data)
 
-    # Convert input into a DataFrame with correct column names
-    input_df = pd.DataFrame([data], columns=FEATURE_COLUMNS)
+    # ✅ Ensure it has all 13 features
+    input_df = pd.DataFrame([data])
+    input_df = input_df[FEATURE_COLUMNS]  # Reorder and filter
     print(input_df)
 
-    # Transform and predict
     new_data = scaler.transform(input_df)
     output = lgbmodel.predict(new_data)
-    print(output[0])
 
     return jsonify({'prediction': output[0]})
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    data = [float(x) for x in request.form.values()]
+    if lgbmodel is None or scaler is None:
+        return render_template('index.html', prediction_text="Model or scaler not loaded properly.")
 
-    # Convert to DataFrame with column names
-    input_df = pd.DataFrame([data], columns=FEATURE_COLUMNS)
-    print(input_df)
+    try:
+        form_values = [float(x) for x in request.form.values()]
+        input_df = pd.DataFrame([form_values], columns=FEATURE_COLUMNS)
+        print(input_df)
 
-    final_input = scaler.transform(input_df)
-    output = lgbmodel.predict(final_input)[0]
+        final_input = scaler.transform(input_df)
+        output = lgbmodel.predict(final_input)[0]
 
-    return render_template('index.html', prediction_text="The House Price prediction is: {}".format(output))
+        return render_template('index.html', prediction_text=f"The House Price prediction is: {output:.2f}")
+    except Exception as e:
+        print("❌ Error during prediction:", e)
+        return render_template('index.html', prediction_text="Error processing the input.")
 
 if __name__ == '__main__':
     print("🚀 Starting Flask app...")
